@@ -7,6 +7,7 @@
 #include "threads/io.h"
 #include "threads/synch.h"
 #include "threads/thread.h"
+//include 에 있는 헤더파일 가져오는거임
 
 /* See [8254] for hardware details of the 8254 timer chip. */
 
@@ -19,6 +20,8 @@
 
 /* Number of timer ticks since OS booted. */
 static int64_t ticks;
+static struct list sleep_list; /*자는 스레드 담는 리스트*/
+
 
 /* Number of loops per timer tick.
    Initialized by timer_calibrate(). */
@@ -37,6 +40,7 @@ timer_init (void) {
 	/* 8254 input frequency divided by TIMER_FREQ, rounded to
 	   nearest. */
 	uint16_t count = (1193180 + TIMER_FREQ / 2) / TIMER_FREQ;
+	list_init(&sleep_list);
 
 	outb (0x43, 0x34);    /* CW: counter 0, LSB then MSB, mode 2, binary. */
 	outb (0x40, count & 0xff);
@@ -88,13 +92,35 @@ timer_elapsed (int64_t then) {
 }
 
 /* Suspends execution for approximately TICKS timer ticks. */
-void
+void	/*스레드가 ticks(변수값)틱 동안 재워줘 호출하는 함수이기에 스레드를 재우는 역할이니 잠든 스레드를 리스트에 넣는 것도 이 놈이 해야함	*/
 timer_sleep (int64_t ticks) {
-	int64_t start = timer_ticks ();
+	//가드 → ASSERT → wakeup_tick 계산 → 인터럽트 끄기 → sleep_list 뒤에 넣기 → 블락 → 되돌리기
 
+	if(ticks <= 0){return;}
 	ASSERT (intr_get_level () == INTR_ON);
-	while (timer_elapsed (start) < ticks)
-		thread_yield ();
+	
+	struct thread *cur = thread_current();
+	cur->wakeup_tick = timer_ticks() + ticks; // 값 계산이 넣기보다 먼저 (질문 2 규칙)
+
+	enum intr_level prev_intrState; // ① 이전 인터럽트 상태를 담을 변수 선언
+	prev_intrState = intr_disable(); // ② 인터럽트 끄고, 이전 상태 저장
+
+	// ref : 우선순위 삽입
+	// 탐색이 빠른게 효율적임
+	struct list_elem *e = list_begin(&sleep_list);
+	while(e != list_end(&sleep_list)){
+		struct thread *t = list_entry(e, struct thread, elem);
+		if(cur->wakeup_tick < t->wakeup_tick){
+			break;
+		}
+		e = list_next(e);
+	}
+	list_insert(e, &cur->elem);
+	
+	thread_block();
+
+	// ⑤ 이전 상태로 되돌리기
+	intr_set_level(prev_intrState);
 }
 
 /* Suspends execution for approximately MS milliseconds. */
@@ -125,7 +151,23 @@ timer_print_stats (void) {
 static void
 timer_interrupt (struct intr_frame *args UNUSED) {
 	ticks++;
+	struct list_elem *e = list_begin(&sleep_list); // ① sleep_list의 첫 원소부터 시작
+	while(e != list_end(&sleep_list)){ // ② 리스트 끝에 닿을 때까지 반복
+	// ③ 지금 원소(elem)에서 struct thread 꺼내기
+	struct thread *t = list_entry(e, struct thread, elem);
+		if(t->wakeup_tick > ticks){ // 시간순으로 정렬함
+			break;
+		}else{
+			e = list_remove(e);
+			thread_unblock(t);
+		}
+	}
+
 	thread_tick ();
+	/*ticks++ → 리스트를 처음부터 끝까지:
+    시각이 됨 → 빼기(다음 원소 받기) → 깨우기
+    아직      → 다음 원소로
+	→ thread_tick*/
 }
 
 /* Returns true if LOOPS iterations waits for more than one timer
