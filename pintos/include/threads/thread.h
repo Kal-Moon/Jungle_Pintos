@@ -91,10 +91,10 @@ struct thread {
 	enum thread_status status;          /* Thread state. */
 	char name[16];                      /* Name (for debugging purposes). */
 	int priority;                       /* Priority. */
-	int64_t wakeup_tick;                /* 깨어날 tick (alarm clock). */
 
 	/* Shared between thread.c and synch.c. */
 	struct list_elem elem;              /* List element. */
+	int64_t awake_tick;                 /* What tick to release block and return to READY */
 
 #ifdef USERPROG
 	/* Owned by userprog/process.c. */
@@ -144,4 +144,8 @@ int thread_get_load_avg (void);
 
 void do_iret (struct intr_frame *tf);
 
+void thread_sleep(int64_t tick);
+void thread_awake(int64_t tick);
+
+bool cmp_priority(const struct list_elem *a, const struct list_elem *b, void *aux UNUSED);
 #endif /* threads/thread.h */

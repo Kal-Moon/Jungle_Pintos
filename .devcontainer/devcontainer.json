@@ -1,9 +1,12 @@
 {
     "name": "pintos-dev",
     "dockerFile": "Dockerfile",
+    "workspaceMount": "source=${localWorkspaceFolder},target=/workspaces/PintOS,type=bind,consistency=cached",
+    "workspaceFolder": "/workspaces/PintOS",
     "remoteUser": "jungle",
-    "workspaceMount": "source=${localWorkspaceFolder},target=/workspaces/pintos_22.04_lab_docker,type=bind",
-    "workspaceFolder": "/workspaces/pintos_22.04_lab_docker",
+    "remoteEnv": {
+        "PATH": "/workspaces/PintOS/pintos/utils:${containerEnv:PATH}"
+    },
     "customizations": {
         "vscode": {
             "extensions": [
