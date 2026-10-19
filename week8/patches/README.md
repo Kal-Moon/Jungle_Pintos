@@ -34,6 +34,6 @@ git am /path/to/2026-10-19-user-memory.patch
 ## 팀에 공유할 것
 
 - **B(준우):** `sys_create`·`sys_open`·`sys_remove` 는 `validate_user_string (file)`, `sys_read`·`sys_write`(파일) 는 `validate_user_buffer` 를 **락 잡기 전에** 부른다. `sys_write` 는 맨 위에서 이미 검증하므로 파일 부분엔 다시 넣을 필요 없음.
-- **B(준우), 화요일 `read`:** `pml4_get_page` 는 매핑 여부만 본다. 읽기 전용 페이지(코드 영역)에 `read` 하면 커널 쓰기에서 fault 가 나므로, 필요하면 `pml4e_walk` 로 PTE 의 `PTE_W` 까지 확인하는 쓰기용 검증을 따로 만든다.
+- **B(준우), 화요일 `read`:** `pml4_get_page` 는 매핑 여부만 본다. 이 핀토스는 `CR0_WP` 를 켜지 않아서 (`threads/start.S`) 커널이 읽기 전용 유저 페이지(코드 영역)에 쓰면 fault 없이 **그냥 덮어써 버린다**. 막고 싶으면 `pml4e_walk` 로 PTE 의 `PTE_W` 까지 확인하는 쓰기용 검증을 따로 만든다. (이걸 보는 테스트는 확인하지 못함)
 - **C(민희):** `wait-killed` 는 `page_fault` 에서 `sys_exit (-1)` 로 종료 상태가 -1 로 남는 것으로 확인 가능.
 - **A(상균), 화요일 `exec`:** 커맨드라인은 `validate_user_string` 으로 검증한 뒤 새 페이지에 복사.
