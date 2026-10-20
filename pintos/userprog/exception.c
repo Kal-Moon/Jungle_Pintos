@@ -4,6 +4,7 @@
 #include "userprog/gdt.h"
 #include "threads/interrupt.h"
 #include "threads/thread.h"
+#include "userprog/syscall.h"
 #include "intrinsic.h"
 
 /* Number of page faults processed. */
@@ -148,6 +149,11 @@ page_fault (struct intr_frame *f) {
 
 	/* Count page faults. */
 	page_fault_cnt++;
+
+	/* 유저 코드가 잘못된 주소를 건드린 것은 커널 문제가 아니라 그 프로세스의 잘못이므로,
+	   커널을 멈추지 않고 그 프로세스만 종료 상태 -1 로 끝낸다. 종료 메시지는 sys_exit () 이 남긴다. */
+	if (user)
+		sys_exit (-1);
 
 	/* If the fault is true fault, show info and exit. */
 	printf ("Page fault at %p: %s error %s page in %s context.\n",

@@ -12,6 +12,8 @@
 #include "userprog/process.h"
 #include "filesys/filesys.h"
 #include "filesys/file.h"
+#include "threads/vaddr.h"
+#include "threads/mmu.h"
 
 void syscall_entry (void);
 void syscall_handler (struct intr_frame *);
@@ -190,6 +192,10 @@ sys_read (int fd UNUSED, void *buffer UNUSED, unsigned size UNUSED) {
 /* 콘솔(fd 1, A) 또는 파일(B)에 쓴다. */
 static int
 sys_write (int fd, const void *buffer, unsigned size) {
+	/* putbuf () 나 file_write () 가 잘못된 주소를 읽다가 커널에서 page fault 가 나지 않도록,
+	   어느 fd 든 쓰기 전에 버퍼 전체를 먼저 검사한다. 파일 쪽 락도 이 뒤에 잡아야 한다. */
+	validate_user_buffer (buffer, size);
+
 	/* fd 1 은 콘솔. 여러 번 나눠 출력하면 다른 프로세스 출력과 섞일 수 있어
 	   콘솔 락을 한 번만 잡는 putbuf () 로 한 번에 출력한다. */
 	if (fd == 1) {
@@ -223,20 +229,45 @@ sys_close (int fd UNUSED) {
 
 /* 유저가 넘긴 주소 하나를 검사한다. NULL, 커널 영역, 매핑 안 된 주소면 exit (-1). (A) */
 void
-validate_user_addr (const void *uaddr UNUSED) {
-	/* TODO (A): 구현. */
+validate_user_addr (const void *uaddr) {
+	/* pml4_get_page () 는 커널 주소를 넘기면 ASSERT 로 멈추므로 커널 영역 검사를 먼저 한다.
+	   매핑 안 된 주소는 커널이 읽는 순간 커널 안에서 page fault 가 나므로 미리 걸러 낸다. */
+	if (uaddr == NULL || !is_user_vaddr (uaddr)
+			|| pml4_get_page (thread_current ()->pml4, uaddr) == NULL)
+		sys_exit (-1);
 }
 
 /* 버퍼 전체(buffer ~ buffer + size - 1)를 검사한다. 페이지 경계 포함. (A) */
 void
-validate_user_buffer (const void *buffer UNUSED, unsigned size UNUSED) {
-	/* TODO (A): 구현. */
+validate_user_buffer (const void *buffer, unsigned size) {
+	const uint8_t *start = buffer;
+	const uint8_t *end;
+	const uint8_t *page;
+
+	/* 0 바이트면 커널이 버퍼를 읽지 않으므로 검사할 것이 없다. */
+	if (size == 0)
+		return;
+
+	/* 매핑은 페이지 단위라서, 버퍼가 걸친 페이지마다 한 번씩만 보면 된다.
+	   시작 페이지는 시작 주소로, 다음 페이지부터는 페이지 첫 주소로 확인한다. */
+	end = start + size - 1;
+	validate_user_addr (start);
+	for (page = pg_round_down (start) + PGSIZE; page <= end; page += PGSIZE)
+		validate_user_addr (page);
 }
 
 /* 문자열을 '\0' 까지 검사한다. (A) */
 void
-validate_user_string (const char *str UNUSED) {
-	/* TODO (A): 구현. */
+validate_user_string (const char *str) {
+	const char *p = str;
+
+	/* 길이를 모르므로 한 글자씩 읽어 가되, 새 페이지에 들어설 때마다 읽기 전에 확인한다. */
+	validate_user_addr (p);
+	while (*p != '\0') {
+		p++;
+		if (pg_ofs (p) == 0)
+			validate_user_addr (p);
+	}
 }
 
 /* 빈 fd 칸에 파일을 넣고 그 번호를 돌려준다. 자리가 없으면 -1. (B) */
