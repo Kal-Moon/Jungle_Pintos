@@ -99,6 +99,7 @@ struct thread {
 #ifdef USERPROG
 	/* Owned by userprog/process.c. */
 	uint64_t *pml4;                     /* Page map level 4 */
+	int exit_status;                    /* exit () 로 받은 종료 상태. 종료 메시지에 찍는다. */
 #endif
 #ifdef VM
 	/* Table for whole virtual memory owned by thread. */
